@@ -4,3 +4,4 @@ numpy
 nsepython
 scipy
 requests
+openpyxl
