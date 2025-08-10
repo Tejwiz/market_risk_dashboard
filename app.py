@@ -4,6 +4,21 @@ import numpy as np
 from nsepython import equity_history
 from scipy.stats import norm
 from datetime import datetime, timedelta
+import urllib.parse
+
+# -------------------------------
+# Ticker Mapping Helper
+# -------------------------------
+def map_to_nse_symbol(ticker):
+    """
+    Map a plain-text ticker from holdings file to NSE-compatible symbol.
+    """
+    ticker = ticker.strip().upper()
+    # Replace & with URL-encoded %26
+    ticker = ticker.replace("&", "%26")
+    # Remove spaces
+    ticker = ticker.replace(" ", "")
+    return ticker
 
 # -------------------------------
 # VaR Calculation Functions
@@ -30,7 +45,7 @@ def fetch_nse_prices(ticker, start_date, end_date):
         start_str = pd.to_datetime(start_date).strftime("%d-%m-%Y")
         end_str = pd.to_datetime(end_date).strftime("%d-%m-%Y")
         
-        df = equity_history(ticker, "EQ", start_str, end_str)  # ✅ fixed argument order
+        df = equity_history(ticker, "EQ", start_str, end_str)
         if df is None or df.empty:
             return None
         
@@ -57,16 +72,11 @@ if uploaded_file is not None:
     if not all(col in df_holdings.columns for col in ["Ticker", "Quantity"]):
         st.error("❌ The file must have columns: 'Ticker', 'Quantity'")
     else:
-        # Clean tickers
-        tickers = (
-            df_holdings['Ticker']
-            .astype(str)
-            .str.strip()
-            .str.upper()
-            .tolist()
-        )
+        # Clean and map tickers
+        df_holdings["Ticker_Clean"] = df_holdings["Ticker"].astype(str).str.strip().str.upper()
+        df_holdings["Ticker_Mapped"] = df_holdings["Ticker_Clean"].apply(map_to_nse_symbol)
 
-        st.write("📌 Cleaned Tickers:", tickers)
+        st.write("📌 Mapped Tickers for NSE API:", df_holdings[["Ticker", "Ticker_Mapped"]])
 
         # Date range
         end_date = datetime.today()
@@ -75,12 +85,14 @@ if uploaded_file is not None:
         # Fetch prices from NSE
         prices = pd.DataFrame()
         failed_tickers = []
-        for t in tickers:
-            series = fetch_nse_prices(t, start_date, end_date)
+        for _, row in df_holdings.iterrows():
+            t_clean = row["Ticker_Clean"]
+            t_mapped = row["Ticker_Mapped"]
+            series = fetch_nse_prices(t_mapped, start_date, end_date)
             if series is not None and not series.empty:
-                prices[t] = series
+                prices[t_clean] = series  # store under original name
             else:
-                failed_tickers.append(t)
+                failed_tickers.append(t_clean)
 
         if prices.empty:
             st.error("❌ No valid price data fetched for any ticker from NSE. Please check tickers.")
@@ -90,17 +102,13 @@ if uploaded_file is not None:
             st.warning(f"⚠️ No data found for: {', '.join(failed_tickers)}")
 
         # Drop failed tickers from holdings
-        df_holdings = df_holdings[
-            df_holdings['Ticker'].str.strip().str.upper().isin(prices.columns)
-        ]
+        df_holdings = df_holdings[df_holdings["Ticker_Clean"].isin(prices.columns)]
 
         # Calculate returns
         returns = prices.pct_change().dropna()
 
         # Portfolio weights
-        quantities = df_holdings.set_index(
-            df_holdings['Ticker'].str.strip().str.upper()
-        )["Quantity"]
+        quantities = df_holdings.set_index("Ticker_Clean")["Quantity"]
 
         latest_prices = prices.iloc[-1]
         position_values = latest_prices * quantities
