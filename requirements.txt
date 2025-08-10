@@ -8,5 +8,8 @@
 \f0\fs24 \cf0 streamlit\
 pandas\
 numpy\
-nsepython==2.97\
+matplotlib\
+yfinance\
+scipy\
+lightgbm\
 }
