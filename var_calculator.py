@@ -2,6 +2,9 @@ import pandas as pd
 import numpy as np
 from scipy.stats import norm
 import yfinance as yf
+from datetime import datetime, timedelta
+from nsepython import equity_history
+
 
 # ===== CONFIG =====
 HOLDINGS_FILE = "holdings.xlsx"   # Your holdings file
@@ -26,6 +29,24 @@ def get_price_history(tickers, period=HIST_PERIOD):
     """Download historical adjusted close prices."""
     price_history = yf.download(tickers, period=period, interval="1d")["Adj Close"]
     return price_history.dropna(how="all")
+
+def get_last_close_price(ticker):
+    """Fetch the last available closing price (weekend safe)."""
+    today = datetime.today()
+
+    # If weekend, roll back to last Friday
+    if today.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
+        days_to_subtract = today.weekday() - 4
+        today = today - timedelta(days=days_to_subtract)
+
+    start_date = (today - timedelta(days=5)).strftime("%Y-%m-%d")
+    end_date = today.strftime("%Y-%m-%d")
+
+    df = equity_history(symbol=ticker, start=start_date, end=end_date)
+    if not df.empty:
+        return df["CH_CLOSING_PRICE"].iloc[-1]  # Last available close
+    else:
+        return None
 
 def calculate_parametric_var(portfolio_returns, total_value, confidence_level=0.95):
     """Parametric VaR using mean & std of portfolio returns."""
